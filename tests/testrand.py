@@ -1,4 +1,4 @@
-from ctypescrypto.rand import *
+from ..ctypescrypto.rand import *
 import unittest
 
 class TestRand(unittest.TestCase):

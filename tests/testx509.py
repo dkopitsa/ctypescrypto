@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
 
-from ctypescrypto.x509 import X509,X509Store,utc,StackOfX509
-from ctypescrypto.oid import Oid
+from ..ctypescrypto.x509 import X509,X509Store,utc,StackOfX509
+from ..ctypescrypto.oid import Oid
 from tempfile import NamedTemporaryFile
 import datetime
 import unittest

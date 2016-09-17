@@ -1,8 +1,9 @@
 """
 Exception which extracts libcrypto error information
 """
-from ctypes import c_ulong, c_char_p, create_string_buffer
-from ctypescrypto import libcrypto
+
+from . import libcrypto, ffi
+
 strings_loaded = False
 
 __all__ = ['LibCryptoError', 'clear_err_stack']
@@ -15,14 +16,15 @@ class LibCryptoError(Exception):
     """
     def __init__(self, msg):
         global strings_loaded
-        if not strings_loaded:
-            libcrypto.ERR_load_crypto_strings()
-            strings_loaded = True
+        # if not strings_loaded:
+        #     libcrypto.ERR_load_crypto_strings()
+        #     strings_loaded = True
         err_code = libcrypto.ERR_get_error()
         mesg = msg
-        buf = create_string_buffer(128)
+        buf = ffi.new('char[]', 128)
         while err_code != 0:
-            mesg += "\n\t" + libcrypto.ERR_error_string(err_code, buf)
+            libcrypto.ERR_error_string(err_code, buf)
+            mesg += "\n\t" + ffi.string(buf)
             err_code = libcrypto.ERR_get_error()
         super(LibCryptoError, self).__init__(mesg)
 
@@ -34,6 +36,6 @@ def clear_err_stack():
     """
     libcrypto.ERR_clear_error()
 
-libcrypto.ERR_get_error.restype = c_ulong
-libcrypto.ERR_error_string.restype = c_char_p
-libcrypto.ERR_error_string.argtypes = (c_ulong, c_char_p)
+# libcrypto.ERR_get_error.restype = c_ulong
+# libcrypto.ERR_error_string.restype = c_char_p
+# libcrypto.ERR_error_string.argtypes = (c_ulong, c_char_p)

@@ -1,4 +1,4 @@
-from ctypescrypto.oid import Oid,create,cleanup
+from ..ctypescrypto.oid import Oid,create,cleanup
 import unittest
 
 class TestStandard(unittest.TestCase):
@@ -39,7 +39,7 @@ class TestStandard(unittest.TestCase):
             o=Oid("No such oid in the database")
     def test_wrongnid(self):
         with self.assertRaises(ValueError):
-            o=Oid(9999999)
+            o=Oid(99999949)
     def test_wrongtype(self):
         with self.assertRaises(TypeError):
             o=Oid([2,5,3,4])
@@ -71,17 +71,15 @@ class TestCustom(unittest.TestCase):
         with self.assertRaises(ValueError):
             x=Oid(sn)
     def testFromObj(self):
-        from ctypescrypto import libcrypto
-        from ctypes import c_int, c_char_p, c_void_p
-        libcrypto.OBJ_txt2obj.argtypes = (c_char_p, c_int)
-        libcrypto.OBJ_txt2obj.restype = c_void_p
+        from ..ctypescrypto import libcrypto
+
         obj= libcrypto.OBJ_txt2obj("1.2.643.100.9",1)
         oid=Oid.fromobj(obj)
         self.assertEqual(str(oid),'1.2.643.100.9')
     def tearDown(self):
         # Always call cleanup before next test
         cleanup()
-    
+
 
 
 

@@ -10,12 +10,12 @@ create it from raw data and neccessary certificates.
 
 
 """
-from ctypes import c_int, c_void_p, c_char_p, c_int, c_uint, c_size_t, POINTER
-from ctypescrypto.exception import LibCryptoError
-from ctypescrypto import libcrypto
-from ctypescrypto.bio import Membio
-from ctypescrypto.oid import Oid
-from ctypescrypto.x509 import StackOfX509
+
+from .exception import LibCryptoError
+from . import libcrypto, ffi
+from .bio import Membio
+from .oid import Oid
+from .x509 import StackOfX509
 
 class CMSError(LibCryptoError):
     """
@@ -56,10 +56,10 @@ def CMS(data, format="PEM"):
     """
     bio = Membio(data)
     if format == "PEM":
-        ptr = libcrypto.PEM_read_bio_CMS(bio.bio, None, None, None)
+        ptr = libcrypto.PEM_read_bio_CMS(bio.bio.bio, ffi.NULL, ffi.NULL, ffi.NULL)
     else:
-        ptr = libcrypto.d2i_CMS_bio(bio.bio, None)
-    if ptr is None:
+        ptr = libcrypto.d2i_CMS_bio(bio.bio.bio, ffi.NULL)
+    if ptr == ffi.NULL:
         raise CMSError("Error parsing CMS data")
     typeoid = Oid(libcrypto.OBJ_obj2nid(libcrypto.CMS_get0_type(ptr)))
     if typeoid.shortname() == "pkcs7-signedData":
@@ -166,16 +166,16 @@ class SignedData(CMSBase):
                 sertificates to search for signing certificates
         @returns True if signature valid, False otherwise
         """
-        bio = None
+        bio = ffi.NULL
         if data != None:
             bio_obj = Membio(data)
-            bio = bio_obj.bio
+            bio = bio_obj.bio.bio
         if certs is not None and len(certs) > 0:
             certstack = StackOfX509(certs)
         else:
-            certstack = None
+            certstack = ffi.NULL
         res = libcrypto.CMS_verify(self.ptr, certstack, store.store, bio,
-                                   None, flags)
+                                   ffi.NULL, flags)
         return res > 0
 
     @property
@@ -194,7 +194,7 @@ class SignedData(CMSBase):
         Returns signed data if present in the message
         """
         bio = Membio()
-        if not libcrypto.CMS_verify(self.ptr, None, None, None, bio.bio,
+        if not libcrypto.CMS_verify(self.ptr, ffi.NULL, ffi.NULL,  ffi.NULL, bio.bio,
                                     Flags.NO_VERIFY):
             raise CMSError("extract data")
         return str(bio)
@@ -306,41 +306,41 @@ class EncryptedData(CMSBase):
 __all__ = ['CMS', 'CMSError', 'Flags', 'SignedData', 'EnvelopedData',
            'EncryptedData']
 
-libcrypto.CMS_get0_type.restype = c_void_p
-libcrypto.CMS_get0_type.argtypes = (c_void_p,)
-libcrypto.CMS_add1_cert.restype = c_int
-libcrypto.CMS_add1_cert.argtypes = (c_void_p, c_void_p)
-libcrypto.CMS_decrypt.restype = c_int
-libcrypto.CMS_decrypt.argtypes = (c_void_p, c_void_p, c_void_p,
-                                  c_void_p, c_void_p, c_uint)
-libcrypto.CMS_encrypt.restype = c_void_p
-libcrypto.CMS_encrypt.argtypes = (c_void_p, c_void_p, c_void_p, c_uint)
-libcrypto.CMS_EncryptedData_decrypt.restype = c_int
-libcrypto.CMS_EncryptedData_decrypt.argtypes = (c_void_p, c_char_p, c_size_t,
-                                                c_void_p, c_void_p, c_uint)
-libcrypto.CMS_EncryptedData_encrypt.restype = c_void_p
-libcrypto.CMS_EncryptedData_encrypt.argtypes = (c_void_p, c_void_p, c_char_p,
-                                                c_size_t, c_uint)
-libcrypto.CMS_final.restype = c_int
-libcrypto.CMS_final.argtypes = (c_void_p, c_void_p, c_void_p, c_uint)
-libcrypto.CMS_get0_signers.restype = c_void_p
-libcrypto.CMS_get0_signers.argtypes = (c_void_p, )
-libcrypto.CMS_get1_certs.restype = c_void_p
-libcrypto.CMS_get1_certs.argtypes = (c_void_p, )
-libcrypto.CMS_sign.restype = c_void_p
-libcrypto.CMS_sign.argtypes = (c_void_p, c_void_p, c_void_p, c_void_p, c_uint)
-libcrypto.CMS_add1_signer.restype = c_void_p
-libcrypto.CMS_add1_signer.argtypes = (c_void_p, c_void_p, c_void_p,
-                                           c_void_p, c_uint)
-libcrypto.CMS_verify.restype = c_int
-libcrypto.CMS_verify.argtypes = (c_void_p, c_void_p, c_void_p, c_void_p,
-                                 c_void_p, c_int)
-libcrypto.d2i_CMS_bio.restype = c_void_p
-libcrypto.d2i_CMS_bio.argtypes = (c_void_p, POINTER(c_void_p))
-libcrypto.i2d_CMS_bio.restype = c_int
-libcrypto.i2d_CMS_bio.argtypes = (c_void_p, c_void_p)
-libcrypto.PEM_read_bio_CMS.restype = c_void_p
-libcrypto.PEM_read_bio_CMS.argtypes = (c_void_p, POINTER(c_void_p),
-                                       c_void_p, c_void_p)
-libcrypto.PEM_write_bio_CMS.restype = c_int
-libcrypto.PEM_write_bio_CMS.argtypes = (c_void_p, c_void_p)
+# libcrypto.CMS_get0_type.restype = c_void_p
+# libcrypto.CMS_get0_type.argtypes = (c_void_p,)
+# libcrypto.CMS_add1_cert.restype = c_int
+# libcrypto.CMS_add1_cert.argtypes = (c_void_p, c_void_p)
+# libcrypto.CMS_decrypt.restype = c_int
+# libcrypto.CMS_decrypt.argtypes = (c_void_p, c_void_p, c_void_p,
+#                                   c_void_p, c_void_p, c_uint)
+# libcrypto.CMS_encrypt.restype = c_void_p
+# libcrypto.CMS_encrypt.argtypes = (c_void_p, c_void_p, c_void_p, c_uint)
+# libcrypto.CMS_EncryptedData_decrypt.restype = c_int
+# libcrypto.CMS_EncryptedData_decrypt.argtypes = (c_void_p, c_char_p, c_size_t,
+#                                                 c_void_p, c_void_p, c_uint)
+# libcrypto.CMS_EncryptedData_encrypt.restype = c_void_p
+# libcrypto.CMS_EncryptedData_encrypt.argtypes = (c_void_p, c_void_p, c_char_p,
+#                                                 c_size_t, c_uint)
+# libcrypto.CMS_final.restype = c_int
+# libcrypto.CMS_final.argtypes = (c_void_p, c_void_p, c_void_p, c_uint)
+# libcrypto.CMS_get0_signers.restype = c_void_p
+# libcrypto.CMS_get0_signers.argtypes = (c_void_p, )
+# libcrypto.CMS_get1_certs.restype = c_void_p
+# libcrypto.CMS_get1_certs.argtypes = (c_void_p, )
+# libcrypto.CMS_sign.restype = c_void_p
+# libcrypto.CMS_sign.argtypes = (c_void_p, c_void_p, c_void_p, c_void_p, c_uint)
+# libcrypto.CMS_add1_signer.restype = c_void_p
+# libcrypto.CMS_add1_signer.argtypes = (c_void_p, c_void_p, c_void_p,
+#                                            c_void_p, c_uint)
+# libcrypto.CMS_verify.restype = c_int
+# libcrypto.CMS_verify.argtypes = (c_void_p, c_void_p, c_void_p, c_void_p,
+#                                  c_void_p, c_int)
+# libcrypto.d2i_CMS_bio.restype = c_void_p
+# libcrypto.d2i_CMS_bio.argtypes = (c_void_p, POINTER(c_void_p))
+# libcrypto.i2d_CMS_bio.restype = c_int
+# libcrypto.i2d_CMS_bio.argtypes = (c_void_p, c_void_p)
+# libcrypto.PEM_read_bio_CMS.restype = c_void_p
+# libcrypto.PEM_read_bio_CMS.argtypes = (c_void_p, POINTER(c_void_p),
+#                                        c_void_p, c_void_p)
+# libcrypto.PEM_write_bio_CMS.restype = c_int
+# libcrypto.PEM_write_bio_CMS.argtypes = (c_void_p, c_void_p)

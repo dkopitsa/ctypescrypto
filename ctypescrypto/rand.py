@@ -2,9 +2,9 @@
     Interface to the OpenSSL pseudo-random generator
 """
 
-from ctypes import create_string_buffer, c_char_p, c_int, c_double
-from ctypescrypto import libcrypto
-from ctypescrypto.exception import LibCryptoError
+
+from . import libcrypto
+from .exception import LibCryptoError
 
 __all__ = ['RandError', 'bytes', 'pseudo_bytes', 'seed', 'status']
 
@@ -21,7 +21,7 @@ def bytes(num, check_result=False):
 
     if num <= 0:
         raise ValueError("'num' should be > 0")
-    buf = create_string_buffer(num)
+    buf = ffi.new('char[]', num)
     result = libcrypto.RAND_bytes(buf, num)
     if check_result and result == 0:
         raise RandError("Random Number Generator not seeded sufficiently")
@@ -38,7 +38,7 @@ def pseudo_bytes(num):
     """
     if num <= 0:
         raise ValueError("'num' should be > 0")
-    buf = create_string_buffer(num)
+    buf = ffi.new('char[]', num)
     libcrypto.RAND_pseudo_bytes(buf, num)
     return buf.raw[:num]
 
@@ -64,8 +64,8 @@ def status():
     """
 
     return libcrypto.RAND_status()
-
-libcrypto.RAND_add.argtypes = (c_char_p, c_int, c_double)
-libcrypto.RAND_seed.argtypes = (c_char_p, c_int)
-libcrypto.RAND_pseudo_bytes.argtypes = (c_char_p, c_int)
-libcrypto.RAND_bytes.argtypes = (c_char_p, c_int)
+#
+# libcrypto.RAND_add.argtypes = (c_char_p, c_int, c_double)
+# libcrypto.RAND_seed.argtypes = (c_char_p, c_int)
+# libcrypto.RAND_pseudo_bytes.argtypes = (c_char_p, c_int)
+# libcrypto.RAND_bytes.argtypes = (c_char_p, c_int)

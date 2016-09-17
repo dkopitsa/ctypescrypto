@@ -1,8 +1,8 @@
 # -*- encoding: utf-8 -*-
-from ctypescrypto.oid import Oid
+from ..ctypescrypto.oid import Oid
 from base64 import b16decode,b16encode
-from ctypescrypto.mac import *
-from ctypescrypto.engine import set_default
+from ..ctypescrypto.mac import *
+from ..ctypescrypto.engine import set_default
 import unittest
 
 class TestMac(unittest.TestCase):

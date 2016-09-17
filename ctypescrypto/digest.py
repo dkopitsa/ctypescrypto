@@ -13,11 +13,11 @@ ctypescrypto.engine.set_default("gost",xFFFF) and md_gost94
 algorithm would be available both to this module and hashlib.
 
 """
-from ctypes import c_int, c_char_p, c_void_p, POINTER, c_long, c_longlong
-from ctypes import create_string_buffer, byref
-from ctypescrypto import libcrypto
-from ctypescrypto.exception import LibCryptoError
-from ctypescrypto.oid import Oid
+
+
+from . import libcrypto
+from .exception import LibCryptoError
+from .oid import Oid
 DIGEST_ALGORITHMS = ("MD5", "SHA1", "SHA224", "SHA256", "SHA384", "SHA512")
 
 __all__ = ['DigestError', 'Digest', 'DigestType', 'new']
@@ -143,7 +143,7 @@ class Digest(object):
             return self.digest_out.raw[:self.digest_size]
         if data is not None:
             self.update(data)
-        self.digest_out = create_string_buffer(256)
+        self.digest_out = ffi.new('char[]', 256)
         length = c_long(0)
         result = libcrypto.EVP_DigestFinal_ex(self.ctx, self.digest_out,
                                               byref(length))
@@ -183,32 +183,32 @@ class Digest(object):
         return b16encode(self.digest(data))
 
 
-# Declare function result and argument types
-libcrypto.EVP_get_digestbyname.restype = c_void_p
-libcrypto.EVP_get_digestbyname.argtypes = (c_char_p, )
-# These two functions are renamed in OpenSSL 1.1.0
+# # Declare function result and argument types
+# libcrypto.EVP_get_digestbyname.restype = c_void_p
+# libcrypto.EVP_get_digestbyname.argtypes = (c_char_p, )
+# # These two functions are renamed in OpenSSL 1.1.0
 if hasattr(libcrypto,"EVP_MD_CTX_create"):
     Digest.newctx = libcrypto.EVP_MD_CTX_create
     Digest.freectx = libcrypto.EVP_MD_CTX_destroy
 else:
     Digest.newctx = libcrypto.EVP_MD_CTX_new
     Digest.freectx = libcrypto.EVP_MD_CTX_free
-Digest.newctx.restype = c_void_p
-Digest.freectx.argtypes = (c_void_p, )
-# libcrypto.EVP_MD_CTX_create has no arguments
-libcrypto.EVP_DigestInit_ex.restype = c_int
-libcrypto.EVP_DigestInit_ex.argtypes = (c_void_p, c_void_p, c_void_p)
-libcrypto.EVP_DigestUpdate.restype = c_int
-libcrypto.EVP_DigestUpdate.argtypes = (c_void_p, c_char_p, c_longlong)
-libcrypto.EVP_DigestFinal_ex.restype = c_int
-libcrypto.EVP_DigestFinal_ex.argtypes = (c_void_p, c_char_p, POINTER(c_long))
-libcrypto.EVP_MD_CTX_copy.restype = c_int
-libcrypto.EVP_MD_CTX_copy.argtypes = (c_void_p, c_void_p)
-libcrypto.EVP_MD_type.argtypes = (c_void_p, )
-libcrypto.EVP_MD_size.argtypes = (c_void_p, )
-libcrypto.EVP_MD_block_size.restype = c_int
-libcrypto.EVP_MD_block_size.argtypes = (c_void_p, )
-libcrypto.EVP_MD_size.restype = c_int
-libcrypto.EVP_MD_size.argtypes = (c_void_p, )
-libcrypto.EVP_MD_type.restype = c_int
-libcrypto.EVP_MD_type.argtypes = (c_void_p, )
+# Digest.newctx.restype = c_void_p
+# Digest.freectx.argtypes = (c_void_p, )
+# # libcrypto.EVP_MD_CTX_create has no arguments
+# libcrypto.EVP_DigestInit_ex.restype = c_int
+# libcrypto.EVP_DigestInit_ex.argtypes = (c_void_p, c_void_p, c_void_p)
+# libcrypto.EVP_DigestUpdate.restype = c_int
+# libcrypto.EVP_DigestUpdate.argtypes = (c_void_p, c_char_p, c_longlong)
+# libcrypto.EVP_DigestFinal_ex.restype = c_int
+# libcrypto.EVP_DigestFinal_ex.argtypes = (c_void_p, c_char_p, POINTER(c_long))
+# libcrypto.EVP_MD_CTX_copy.restype = c_int
+# libcrypto.EVP_MD_CTX_copy.argtypes = (c_void_p, c_void_p)
+# libcrypto.EVP_MD_type.argtypes = (c_void_p, )
+# libcrypto.EVP_MD_size.argtypes = (c_void_p, )
+# libcrypto.EVP_MD_block_size.restype = c_int
+# libcrypto.EVP_MD_block_size.argtypes = (c_void_p, )
+# libcrypto.EVP_MD_size.restype = c_int
+# libcrypto.EVP_MD_size.argtypes = (c_void_p, )
+# libcrypto.EVP_MD_type.restype = c_int
+# libcrypto.EVP_MD_type.argtypes = (c_void_p, )

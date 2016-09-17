@@ -4,9 +4,10 @@
 """
 
 
-from ctypes import CDLL, c_char_p
-from ctypes.util import find_library
 import sys
+
+from django.conf import settings
+
 
 def config(filename=None):
     """
@@ -17,16 +18,17 @@ def config(filename=None):
 
 __all__ = ['config']
 
-if sys.platform.startswith('win'):
-    __libname__ = find_library('libeay32')
-else:
-    __libname__ = find_library('crypto')
 
-if __libname__ is None:
-    raise OSError("Cannot find OpenSSL crypto library")
+from cryptography.hazmat.backends.openssl.backend import backend
 
-#__libname__ = "/usr/local/ssl/lib/libcrypto.so.1.1"
 
-libcrypto = CDLL(__libname__)
-libcrypto.OPENSSL_config.argtypes = (c_char_p, )
-libcrypto.OPENSSL_add_all_algorithms_conf()
+libcrypto = backend._lib
+ffi = backend._ffi
+
+FILETYPE_PEM = libcrypto.SSL_FILETYPE_PEM
+FILETYPE_ASN1 = libcrypto.SSL_FILETYPE_ASN1
+
+if settings.OPENSSL_CONFIG:
+    print settings.OPENSSL_CONFIG
+    # config(str(settings.OPENSSL_CONFIG))
+    config('/etc/ssl/openssl.cnf')

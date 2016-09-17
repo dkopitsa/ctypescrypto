@@ -8,12 +8,11 @@ such as CMS, OCSP and timestamps.
 
 
 
-from ctypes import c_void_p, c_long, c_ulong, c_int, POINTER, c_char_p, Structure, cast
-from ctypescrypto.bio import Membio
-from ctypescrypto.pkey import PKey
-from ctypescrypto.oid import Oid
-from ctypescrypto.exception import LibCryptoError
-from ctypescrypto import libcrypto
+from .bio import Membio
+from .pkey import PKey
+from .oid import Oid
+from .exception import LibCryptoError
+from . import libcrypto, ffi
 from datetime import datetime
 
 try:
@@ -38,68 +37,11 @@ except ImportError:
 
 __all__ = ['X509', 'X509Error', 'X509Name', 'X509Store', 'StackOfX509']
 
-if hasattr(libcrypto,"X509_get_version"):
-    
-# If it is OpenSSL 1.1 or above, use accessor functions
-    _X509_get_version = libcrypto.X509_get_version
-    _X509_get_version.restype = c_long
-    _X509_get_version.argtypes = (c_void_p,)
+_X509_get_version = libcrypto.X509_get_version
 
-    _X509_get_notBefore=libcrypto.X509_get_notBefore
-    _X509_get_notBefore.restype = c_void_p
-    _X509_get_notBefore.argtypes = (c_void_p,)
+_X509_get_notBefore=libcrypto.X509_get_notBefore
 
-    _X509_get_notAfter=libcrypto.X509_get_notAfter
-    _X509_get_notAfter.restype = c_void_p
-    _X509_get_notAfter.argtypes = (c_void_p,)
-else:
-    # Otherwise declare X509 structure internals and define deep poke
-    # functions
-    class _validity(Structure):
-        """ ctypes representation of X509_VAL structure
-            needed to access certificate validity period, because openssl
-            doesn't provide fuctions for it - only macros
-        """
-        _fields_ = [('notBefore', c_void_p), ('notAfter', c_void_p)]
-
-    class _cinf(Structure):
-        """ ctypes representtion of X509_CINF structure
-            neede to access certificate data, which are accessable only
-            via macros
-        """
-        _fields_ = [('version', c_void_p),
-                    ('serialNumber', c_void_p),
-                    ('sign_alg', c_void_p),
-                    ('issuer', c_void_p),
-                    ('validity', POINTER(_validity)),
-                    ('subject', c_void_p),
-                    ('pubkey', c_void_p),
-                    ('issuerUID', c_void_p),
-                    ('subjectUID', c_void_p),
-                    ('extensions', c_void_p),
-                ]
-
-    class _x509(Structure):
-        """
-        ctypes represntation of X509 structure needed
-        to access certificate data which are accesable only via
-        macros, not functions
-        """
-        _fields_ = [('cert_info', POINTER(_cinf)),
-                    ('sig_alg', c_void_p),
-                    ('signature', c_void_p),
-                    # There are a lot of parsed extension fields there
-                ]
-    _px509 = POINTER(_x509)
-    def _X509_get_version(ptr):
-        asn1int = cast(ptr, _px509)[0].cert_info[0].version  
-        return libcrypto.ASN1_INTEGER_get(asn1int)
-
-    def _X509_get_notBefore(ptr):   
-        # (x)->cert_info->validity->notBefore
-        return cast(ptr, _px509)[0].cert_info[0].validity[0].notBefore
-    def _X509_get_notAfter(ptr):
-        return cast(ptr, _px509)[0].cert_info[0].validity[0].notAfter
+_X509_get_notAfter=libcrypto.X509_get_notAfter
 
 class X509Error(LibCryptoError):
     """
@@ -189,7 +131,7 @@ class X509Name(object):
         elif isinstance(key, (int, long)):
             # Return OID, string tuple
             entry = libcrypto.X509_NAME_get_entry(self.ptr, key)
-            if entry is None:
+            if entry == ffi.NULL:
                 raise IndexError("name entry index out of range")
             oid = Oid.fromobj(libcrypto.X509_NAME_ENTRY_get_object(entry))
             value = libcrypto.X509_NAME_ENTRY_get_data(entry)
@@ -212,12 +154,12 @@ class X509Name(object):
     def __hash__(self):
         return libcrypto.X509_NAME_hash(self.ptr)
 
-class _x509_ext(Structure):
-    """ Represens C structure X509_EXTENSION """
-    _fields_ = [("object", c_void_p),
-                ("critical", c_int),
-                ("value", c_void_p)
-               ]
+# class _x509_ext(Structure):
+#     """ Represens C structure X509_EXTENSION """
+#     _fields_ = [("object", c_void_p),
+#                 ("critical", c_int),
+#                 ("value", c_void_p)
+#                ]
 
 class X509_EXT(object):
     """ Python object which represents a certificate extension """
@@ -243,11 +185,13 @@ class X509_EXT(object):
     @property
     def oid(self):
         "Returns OID of the extension"
-        return Oid.fromobj(self.ptr[0].object)
+        obj = libcrypto.X509_EXTENSION_get_object(self.ptr)
+        return Oid.fromobj(obj)
     @property
     def critical(self):
         "Returns True if extensin have critical flag set"
-        return self.ptr[0].critical > 0
+        critical = libcrypto.X509_EXTENSION_get_critical(self.ptr)
+        return critical > 0
 
 class _X509extlist(object):
     """
@@ -271,7 +215,7 @@ class _X509extlist(object):
         Returns extension by index, creating a copy
         """
         ext_ptr = libcrypto.X509_get_ext(self.cert.cert, item)
-        if ext_ptr is None:
+        if ext_ptr == ffi.NULL:
             raise IndexError
         return X509_EXT(ext_ptr, True)
     def find(self, oid):
@@ -312,7 +256,7 @@ class _X509extlist(object):
         return found
 
 def _X509__asn1date_to_datetime(asn1date):
-    """ 
+    """
     Converts openssl ASN1_TIME object to python datetime.datetime
     """
     bio = Membio()
@@ -341,10 +285,10 @@ class X509(object):
         else:
             bio = Membio(data)
             if format == "PEM":
-                self.cert = libcrypto.PEM_read_bio_X509(bio.bio, None, None,
-                                                        None)
+                self.cert = libcrypto.PEM_read_bio_X509(bio.bio.bio, ffi.NULL, ffi.NULL,
+                                                        ffi.NULL)
             else:
-                self.cert = libcrypto.d2i_X509_bio(bio.bio, None)
+                self.cert = libcrypto.d2i_X509_bio(bio.bio.bio, ffi.NULL)
             if self.cert is None:
                 raise X509Error("error reading certificate")
         self.extensions = _X509extlist(self)
@@ -365,7 +309,7 @@ class X509(object):
     @property
     def pubkey(self):
         """EVP PKEy object of certificate public key"""
-        return PKey(ptr=libcrypto.X509_get_pubkey(self.cert, False))
+        return PKey(ptr=libcrypto.X509_get_pubkey(self.cert))
     def pem(self):
         """ Returns PEM represntation of the certificate """
         bio = Membio()
@@ -394,7 +338,7 @@ class X509(object):
             if chain is not None and len(chain) > 0:
                 chain_ptr = StackOfX509(chain).ptr
             else:
-                chain_ptr = None
+                chain_ptr = ffi.NULL
             if libcrypto.X509_STORE_CTX_init(ctx, store.store, self.cert,
                                              chain_ptr) < 0:
                 raise X509Error("Error allocating X509_STORE_CTX")
@@ -473,20 +417,20 @@ class X509Store(object):
             raise X509Error("allocating store")
         lookup = libcrypto.X509_STORE_add_lookup(self.store,
                                                  libcrypto.X509_LOOKUP_file())
-        if lookup is None:
+        if lookup == ffi.NULL:
             raise X509Error("error installing file lookup method")
         if file is not None:
-            if not libcrypto.X509_LOOKUP_ctrl(lookup, 1, file, 1, None) > 0:
+            if not libcrypto.X509_LOOKUP_ctrl(lookup, 1, file, 1, ffi.NULL) > 0:
                 raise X509Error("error loading trusted certs from file "+file)
         lookup = libcrypto.X509_STORE_add_lookup(self.store,
                                              libcrypto.X509_LOOKUP_hash_dir())
-        if lookup is None:
+        if lookup is ffi.NULL:
             raise X509Error("error installing hashed lookup method")
         if dir is not None:
-            if not libcrypto.X509_LOOKUP_ctrl(lookup, 2, dir, 1, None) > 0:
+            if not libcrypto.X509_LOOKUP_ctrl(lookup, 2, dir, 1, ffi.NULL) > 0:
                 raise X509Error("error adding hashed  trusted certs dir "+dir)
         if default:
-            if not libcrypto.X509_LOOKUP_ctrl(lookup, 2, None, 3, None) > 0:
+            if not libcrypto.X509_LOOKUP_ctrl(lookup, 2, ffi.NULL, 3, ffi.NULL) > 0:
                 raise X509Error("error adding default trusted certs dir ")
     def add_cert(self, cert):
         """
@@ -565,7 +509,7 @@ class StackOfX509(object):
         self.need_free = False
         if  ptr is None:
             self.need_free = True
-            self.ptr = libcrypto.sk_new_null()
+            self.ptr = libcrypto.sk_X509_new_null()
             if certs is not None:
                 for crt in certs:
                     self.append(crt)
@@ -575,11 +519,11 @@ class StackOfX509(object):
             self.need_free = disposable
             self.ptr = ptr
     def __len__(self):
-        return libcrypto.sk_num(self.ptr)
+        return libcrypto.sk_X509_num(self.ptr)
     def __getitem__(self, index):
         if index < 0 or index >= len(self):
             raise IndexError
-        p = libcrypto.sk_value(self.ptr, index)
+        p = libcrypto.sk_X509_value(self.ptr, index)
         return X509(ptr=libcrypto.X509_dup(p))
     def __setitem__(self, index, value):
         if not self.need_free:
@@ -588,17 +532,18 @@ class StackOfX509(object):
             raise IndexError
         if not isinstance(value, X509):
             raise TypeError('StackOfX509 can contain only X509 objects')
-        p = libcrypto.sk_value(self.ptr, index)
-        libcrypto.sk_set(self.ptr, index, libcrypto.X509_dup(value.cert))
+        p = libcrypto.sk_X509_value(self.ptr, index)
+        libcrypto.sk_X509_set(self.ptr, index, libcrypto.X509_dup(value.cert))
         libcrypto.X509_free(p)
     def __delitem__(self, index):
         if not self.need_free:
             raise ValueError("Stack is read-only")
         if index < 0 or index >= len(self):
             raise IndexError
-        p = libcrypto.sk_delete(self.ptr, index)
+        p = libcrypto.sk_X509_delete(self.ptr, index)
         libcrypto.X509_free(p)
     def __del__(self):
+        return
         if self.need_free:
             libcrypto.sk_pop_free(self.ptr, libcrypto.X509_free)
     def append(self, value):
@@ -607,87 +552,87 @@ class StackOfX509(object):
             raise ValueError("Stack is read-only")
         if not isinstance(value, X509):
             raise TypeError('StackOfX509 can contain only X509 objects')
-        libcrypto.sk_push(self.ptr, libcrypto.X509_dup(value.cert))
+        libcrypto.sk_X509_push(self.ptr, libcrypto.X509_dup(value.cert))
 
-libcrypto.d2i_X509_bio.argtypes = (c_void_p,POINTER(c_void_p))
-libcrypto.X509_free.argtypes = (c_void_p,)
-libcrypto.X509_dup.restype = c_void_p
-libcrypto.X509_dup.argtypes = (c_void_p, )
-libcrypto.i2a_ASN1_INTEGER.argtypes = (c_void_p, c_void_p)
-libcrypto.ASN1_STRING_print_ex.argtypes = (c_void_p, c_void_p, c_long)
-libcrypto.PEM_read_bio_X509.restype = c_void_p
-libcrypto.PEM_read_bio_X509.argtypes = (c_void_p, POINTER(c_void_p),
-                                        c_void_p, c_void_p)
-libcrypto.PEM_write_bio_X509.restype = c_int
-libcrypto.PEM_write_bio_X509.argtypes = (c_void_p, c_void_p)
-libcrypto.ASN1_TIME_print.argtypes = (c_void_p, c_void_p)
-libcrypto.ASN1_INTEGER_get.argtypes = (c_void_p, )
-libcrypto.ASN1_INTEGER_get.restype = c_long
-libcrypto.X509_check_ca.argtypes = (c_void_p, )
-libcrypto.X509_get_serialNumber.argtypes = (c_void_p, )
-libcrypto.X509_get_serialNumber.restype = c_void_p
-libcrypto.X509_get_subject_name.argtypes = (c_void_p, )
-libcrypto.X509_get_subject_name.restype = c_void_p
-libcrypto.X509_get_issuer_name.argtypes = (c_void_p, )
-libcrypto.X509_get_issuer_name.restype = c_void_p
-libcrypto.X509_NAME_ENTRY_get_object.restype = c_void_p
-libcrypto.X509_NAME_ENTRY_get_object.argtypes = (c_void_p, )
-libcrypto.X509_NAME_ENTRY_get_data.restype = c_void_p
-libcrypto.X509_NAME_ENTRY_get_data.argtypes = (c_void_p, )
-libcrypto.OBJ_obj2nid.argtypes = (c_void_p, )
-libcrypto.X509_NAME_get_entry.restype = c_void_p
-libcrypto.X509_NAME_get_entry.argtypes = (c_void_p, c_int)
-libcrypto.X509_STORE_new.restype = c_void_p
-libcrypto.X509_STORE_add_lookup.restype = c_void_p
-libcrypto.X509_STORE_add_lookup.argtypes = (c_void_p, c_void_p)
-libcrypto.X509_STORE_add_cert.argtypes = (c_void_p, c_void_p)
-libcrypto.X509_STORE_CTX_new.restype = c_void_p
-libcrypto.X509_STORE_CTX_free.argtypes = (c_void_p,)
-libcrypto.X509_STORE_CTX_init.argtypes = (c_void_p, c_void_p, c_void_p,
-                                            c_void_p)
-libcrypto.X509_STORE_set_depth.argtypes = (c_void_p, c_int)
-libcrypto.X509_STORE_set_flags.argtypes = (c_void_p, c_ulong)
-libcrypto.X509_STORE_set_purpose.argtypes = (c_void_p, c_int)
-libcrypto.X509_LOOKUP_file.restype = c_void_p
-libcrypto.X509_LOOKUP_hash_dir.restype = c_void_p
-libcrypto.X509_LOOKUP_ctrl.restype = c_int
-libcrypto.X509_LOOKUP_ctrl.argtypes = (c_void_p, c_int, c_char_p, c_long,
-                                       POINTER(c_char_p))
-libcrypto.X509_EXTENSION_free.argtypes = (c_void_p, )
-libcrypto.X509_EXTENSION_dup.argtypes = (c_void_p, )
-libcrypto.X509_EXTENSION_dup.restype = POINTER(_x509_ext)
-libcrypto.X509V3_EXT_print.argtypes = (c_void_p, POINTER(_x509_ext), c_long,
-                                       c_int)
-libcrypto.X509_get_ext.restype = c_void_p
-libcrypto.X509_get_ext.argtypes = (c_void_p, c_int)
-libcrypto.X509_get_ext_by_critical.argtypes = (c_void_p, c_int, c_int)
-libcrypto.X509_get_ext_by_NID.argtypes = (c_void_p, c_int, c_int)
-libcrypto.X509_get_ext_count.argtypes = (c_void_p, )
-libcrypto.X509_get_pubkey.restype = c_void_p
-libcrypto.X509_get_pubkey.argtypes = (c_void_p, )
-libcrypto.X509V3_EXT_print.argtypes = (c_void_p, POINTER(_x509_ext), c_long,
-      c_int)
-libcrypto.X509_LOOKUP_file.restype = c_void_p
-libcrypto.X509_LOOKUP_hash_dir.restype = c_void_p
-libcrypto.X509_NAME_cmp.argtypes = (c_void_p, c_void_p)
-libcrypto.X509_NAME_entry_count.argtypes = (c_void_p,) 
-libcrypto.X509_NAME_free.argtypes = (c_void_p,)
-libcrypto.X509_NAME_new.restype = c_void_p
-libcrypto.X509_NAME_print_ex.argtypes = (c_void_p, c_void_p, c_int, c_ulong)
-libcrypto.X509_PURPOSE_get_by_sname.argtypes=(c_char_p,)
-libcrypto.X509_verify.argtypes = (c_void_p, c_void_p)
-libcrypto.X509_verify_cert.argtypes = (c_void_p,)
-libcrypto.sk_num.restype = c_int
-libcrypto.sk_num.argtypes= (c_void_p,)
-libcrypto.sk_set.argtypes = (c_void_p, c_int, c_void_p)
-libcrypto.sk_set.restype = c_void_p
-libcrypto.sk_value.argtypes = (c_void_p, c_int)
-libcrypto.sk_value.restype = c_void_p
-libcrypto.sk_delete.argtypes = (c_void_p, c_int)
-libcrypto.sk_delete.restype = c_void_p
-libcrypto.sk_new_null.restype = c_void_p
-libcrypto.sk_pop_free.argtypes = (c_void_p, c_void_p)
-libcrypto.sk_push.argtypes = (c_void_p, c_void_p)
-libcrypto.X509_NAME_hash.restype = c_long
-libcrypto.X509_NAME_hash.argtypes = (c_void_p, )
-libcrypto.X509_NAME_get_index_by_NID.argtypes = (c_void_p, c_int, c_int)
+# libcrypto.d2i_X509_bio.argtypes = (c_void_p,POINTER(c_void_p))
+# libcrypto.X509_free.argtypes = (c_void_p,)
+# libcrypto.X509_dup.restype = c_void_p
+# libcrypto.X509_dup.argtypes = (c_void_p, )
+# libcrypto.i2a_ASN1_INTEGER.argtypes = (c_void_p, c_void_p)
+# libcrypto.ASN1_STRING_print_ex.argtypes = (c_void_p, c_void_p, c_long)
+# libcrypto.PEM_read_bio_X509.restype = c_void_p
+# libcrypto.PEM_read_bio_X509.argtypes = (c_void_p, POINTER(c_void_p),
+#                                         c_void_p, c_void_p)
+# libcrypto.PEM_write_bio_X509.restype = c_int
+# libcrypto.PEM_write_bio_X509.argtypes = (c_void_p, c_void_p)
+# libcrypto.ASN1_TIME_print.argtypes = (c_void_p, c_void_p)
+# libcrypto.ASN1_INTEGER_get.argtypes = (c_void_p, )
+# libcrypto.ASN1_INTEGER_get.restype = c_long
+# libcrypto.X509_check_ca.argtypes = (c_void_p, )
+# libcrypto.X509_get_serialNumber.argtypes = (c_void_p, )
+# libcrypto.X509_get_serialNumber.restype = c_void_p
+# libcrypto.X509_get_subject_name.argtypes = (c_void_p, )
+# libcrypto.X509_get_subject_name.restype = c_void_p
+# libcrypto.X509_get_issuer_name.argtypes = (c_void_p, )
+# libcrypto.X509_get_issuer_name.restype = c_void_p
+# libcrypto.X509_NAME_ENTRY_get_object.restype = c_void_p
+# libcrypto.X509_NAME_ENTRY_get_object.argtypes = (c_void_p, )
+# libcrypto.X509_NAME_ENTRY_get_data.restype = c_void_p
+# libcrypto.X509_NAME_ENTRY_get_data.argtypes = (c_void_p, )
+# libcrypto.OBJ_obj2nid.argtypes = (c_void_p, )
+# libcrypto.X509_NAME_get_entry.restype = c_void_p
+# libcrypto.X509_NAME_get_entry.argtypes = (c_void_p, c_int)
+# libcrypto.X509_STORE_new.restype = c_void_p
+# libcrypto.X509_STORE_add_lookup.restype = c_void_p
+# libcrypto.X509_STORE_add_lookup.argtypes = (c_void_p, c_void_p)
+# libcrypto.X509_STORE_add_cert.argtypes = (c_void_p, c_void_p)
+# libcrypto.X509_STORE_CTX_new.restype = c_void_p
+# libcrypto.X509_STORE_CTX_free.argtypes = (c_void_p,)
+# libcrypto.X509_STORE_CTX_init.argtypes = (c_void_p, c_void_p, c_void_p,
+#                                             c_void_p)
+# libcrypto.X509_STORE_set_depth.argtypes = (c_void_p, c_int)
+# libcrypto.X509_STORE_set_flags.argtypes = (c_void_p, c_ulong)
+# libcrypto.X509_STORE_set_purpose.argtypes = (c_void_p, c_int)
+# libcrypto.X509_LOOKUP_file.restype = c_void_p
+# libcrypto.X509_LOOKUP_hash_dir.restype = c_void_p
+# libcrypto.X509_LOOKUP_ctrl.restype = c_int
+# libcrypto.X509_LOOKUP_ctrl.argtypes = (c_void_p, c_int, c_char_p, c_long,
+#                                        POINTER(c_char_p))
+# libcrypto.X509_EXTENSION_free.argtypes = (c_void_p, )
+# libcrypto.X509_EXTENSION_dup.argtypes = (c_void_p, )
+# libcrypto.X509_EXTENSION_dup.restype = POINTER(_x509_ext)
+# libcrypto.X509V3_EXT_print.argtypes = (c_void_p, POINTER(_x509_ext), c_long,
+#                                        c_int)
+# libcrypto.X509_get_ext.restype = c_void_p
+# libcrypto.X509_get_ext.argtypes = (c_void_p, c_int)
+# libcrypto.X509_get_ext_by_critical.argtypes = (c_void_p, c_int, c_int)
+# libcrypto.X509_get_ext_by_NID.argtypes = (c_void_p, c_int, c_int)
+# libcrypto.X509_get_ext_count.argtypes = (c_void_p, )
+# libcrypto.X509_get_pubkey.restype = c_void_p
+# libcrypto.X509_get_pubkey.argtypes = (c_void_p, )
+# libcrypto.X509V3_EXT_print.argtypes = (c_void_p, POINTER(_x509_ext), c_long,
+#       c_int)
+# libcrypto.X509_LOOKUP_file.restype = c_void_p
+# libcrypto.X509_LOOKUP_hash_dir.restype = c_void_p
+# libcrypto.X509_NAME_cmp.argtypes = (c_void_p, c_void_p)
+# libcrypto.X509_NAME_entry_count.argtypes = (c_void_p,)
+# libcrypto.X509_NAME_free.argtypes = (c_void_p,)
+# libcrypto.X509_NAME_new.restype = c_void_p
+# libcrypto.X509_NAME_print_ex.argtypes = (c_void_p, c_void_p, c_int, c_ulong)
+# libcrypto.X509_PURPOSE_get_by_sname.argtypes=(c_char_p,)
+# libcrypto.X509_verify.argtypes = (c_void_p, c_void_p)
+# libcrypto.X509_verify_cert.argtypes = (c_void_p,)
+# libcrypto.sk_num.restype = c_int
+# libcrypto.sk_num.argtypes= (c_void_p,)
+# libcrypto.sk_set.argtypes = (c_void_p, c_int, c_void_p)
+# libcrypto.sk_set.restype = c_void_p
+# libcrypto.sk_value.argtypes = (c_void_p, c_int)
+# libcrypto.sk_value.restype = c_void_p
+# libcrypto.sk_delete.argtypes = (c_void_p, c_int)
+# libcrypto.sk_delete.restype = c_void_p
+# libcrypto.sk_new_null.restype = c_void_p
+# libcrypto.sk_pop_free.argtypes = (c_void_p, c_void_p)
+# libcrypto.sk_push.argtypes = (c_void_p, c_void_p)
+# libcrypto.X509_NAME_hash.restype = c_long
+# libcrypto.X509_NAME_hash.argtypes = (c_void_p, )
+# libcrypto.X509_NAME_get_index_by_NID.argtypes = (c_void_p, c_int, c_int)

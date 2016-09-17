@@ -1,4 +1,4 @@
-from ctypescrypto.pbkdf2 import pbkdf2
+from ..ctypescrypto.pbkdf2 import pbkdf2
 import unittest
 
 class TestPBKDF2(unittest.TestCase):
@@ -14,9 +14,9 @@ class TestPBKDF2(unittest.TestCase):
     def test_1000iter(self):
         d=pbkdf2("password","saltsalt",48,digesttype="sha1",iterations=1000)
         self.assertEqual(d,self.answersha1_1000)
-    def test_sha256(self):  
+    def test_sha256(self):
         d=pbkdf2("password","\01\02\03\04\0abc",48,digesttype="sha256")
         self.assertEqual(d,self.answersha256)
-        
+
 if __name__ == "__main__":
     unittest.main()

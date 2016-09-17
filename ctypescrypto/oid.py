@@ -18,9 +18,8 @@ library.
 This module provides Oid object which represents entry to OpenSSL
 OID database.
 """
-from ctypescrypto import libcrypto
-from ctypes import c_char_p, c_void_p, c_int, create_string_buffer
-from ctypescrypto.exception import LibCryptoError
+from . import libcrypto, ffi
+from .exception import LibCryptoError
 
 __all__ = ['Oid', 'create', 'cleanup']
 
@@ -58,7 +57,7 @@ class Oid(object):
                                  value)
         elif isinstance(value, (int, long)):
             short = libcrypto.OBJ_nid2sn(value)
-            if short is None:
+            if short == ffi.NULL:
                 raise ValueError("No such nid %d in the database" % value)
             self.nid = value
         elif isinstance(value, Oid):
@@ -79,16 +78,16 @@ class Oid(object):
         return "Oid('%s')" % (self.dotted())
     def shortname(self):
         " Returns short name if any "
-        return libcrypto.OBJ_nid2sn(self.nid)
+        return ffi.string(libcrypto.OBJ_nid2sn(self.nid))
     def longname(self):
         " Returns logn name if any "
-        return  libcrypto.OBJ_nid2ln(self.nid)
+        return  ffi.string(libcrypto.OBJ_nid2ln(self.nid))
     def dotted(self):
         " Returns dotted-decimal reperesentation "
         obj = libcrypto.OBJ_nid2obj(self.nid)
-        buf = create_string_buffer(256)
+        buf = ffi.new('char[]', 256)
         libcrypto.OBJ_obj2txt(buf, 256, obj, 1)
-        return buf.value
+        return ffi.string(buf)
     @staticmethod
     def fromobj(obj):
         """
@@ -98,9 +97,9 @@ class Oid(object):
         """
         nid = libcrypto.OBJ_obj2nid(obj)
         if nid == 0:
-            buf = create_string_buffer(80)
+            buf = ffi.new('char[]', 80)
             dotted_len = libcrypto.OBJ_obj2txt(buf, 80, obj, 1)
-            dotted = buf[:dotted_len]
+            dotted = ffi.string(buf, dotted_len)
             oid = create(dotted, dotted, dotted)
         else:
             oid = Oid(nid)
@@ -136,11 +135,11 @@ def cleanup():
     """
     libcrypto.OBJ_cleanup()
 
-libcrypto.OBJ_nid2sn.restype = c_char_p
-libcrypto.OBJ_nid2ln.restype = c_char_p
-libcrypto.OBJ_nid2obj.restype = c_void_p
-libcrypto.OBJ_obj2nid.restype = c_int
-libcrypto.OBJ_obj2txt.argtypes = (c_char_p, c_int, c_void_p, c_int)
-libcrypto.OBJ_txt2nid.argtupes = (c_char_p, )
-libcrypto.OBJ_obj2nid.argtupes = (c_void_p, )
-libcrypto.OBJ_create.argtypes = (c_char_p, c_char_p, c_char_p)
+# libcrypto.OBJ_nid2sn.restype = c_char_p
+# libcrypto.OBJ_nid2ln.restype = c_char_p
+# libcrypto.OBJ_nid2obj.restype = c_void_p
+# libcrypto.OBJ_obj2nid.restype = c_int
+# libcrypto.OBJ_obj2txt.argtypes = (c_char_p, c_int, c_void_p, c_int)
+# libcrypto.OBJ_txt2nid.argtupes = (c_char_p, )
+# libcrypto.OBJ_obj2nid.argtupes = (c_void_p, )
+# libcrypto.OBJ_create.argtypes = (c_char_p, c_char_p, c_char_p)

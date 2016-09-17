@@ -1,5 +1,5 @@
-from ctypescrypto.oid import Oid
-from ctypescrypto import cipher
+from ..ctypescrypto.oid import Oid
+from ..ctypescrypto import cipher
 import unittest
 import sys
 

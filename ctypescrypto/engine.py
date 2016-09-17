@@ -1,9 +1,9 @@
 """
 engine loading and configuration
 """
-from ctypes import c_void_p, c_char_p, c_int
-from ctypescrypto import libcrypto
-from ctypescrypto.exception import LibCryptoError
+
+from . import libcrypto
+from .exception import LibCryptoError
 
 __all__ = ['default', 'set_default', 'Engine']
 
@@ -37,7 +37,7 @@ class Engine(object):
         self.ptr = eng
 
     def private_key(self, key_id, ui_method = None, ui_data=None):
-        from ctypescrypto.pkey import PKey
+        from .pkey import PKey
         if ui_method is None:
             ui_ptr = libcrypto.UI_OpenSSL()
         else:
@@ -61,15 +61,15 @@ def set_default(eng, algorithms=0xFFFF):
     global default
     libcrypto.ENGINE_set_default(eng.ptr, c_int(algorithms))
     default = eng
-
-# Declare function result and arguments for used functions
-libcrypto.ENGINE_by_id.restype = c_void_p
-libcrypto.ENGINE_by_id.argtypes = (c_char_p, )
-libcrypto.ENGINE_set_default.argtypes = (c_void_p, c_int)
-libcrypto.ENGINE_ctrl_cmd_string.argtypes = (c_void_p, c_char_p, c_char_p,
-                                             c_int)
-libcrypto.ENGINE_finish.argtypes = (c_char_p, )
-libcrypto.ENGINE_init.argtypes = (c_void_p, )
-libcrypto.UI_OpenSSL.restype = c_void_p
-libcrypto.ENGINE_load_private_key.argtypes = (c_void_p, c_char_p, c_void_p, c_void_p)
-libcrypto.ENGINE_load_private_key.restype = c_void_p
+#
+# # Declare function result and arguments for used functions
+# libcrypto.ENGINE_by_id.restype = c_void_p
+# libcrypto.ENGINE_by_id.argtypes = (c_char_p, )
+# libcrypto.ENGINE_set_default.argtypes = (c_void_p, c_int)
+# libcrypto.ENGINE_ctrl_cmd_string.argtypes = (c_void_p, c_char_p, c_char_p,
+#                                              c_int)
+# libcrypto.ENGINE_finish.argtypes = (c_char_p, )
+# libcrypto.ENGINE_init.argtypes = (c_void_p, )
+# libcrypto.UI_OpenSSL.restype = c_void_p
+# libcrypto.ENGINE_load_private_key.argtypes = (c_void_p, c_char_p, c_void_p, c_void_p)
+# libcrypto.ENGINE_load_private_key.restype = c_void_p

@@ -1,5 +1,5 @@
-from ctypescrypto.oid import Oid
-from ctypescrypto import digest
+from ..ctypescrypto.oid import Oid
+from ..ctypescrypto import digest
 from base64 import b16decode,b16encode
 import unittest
 
@@ -91,7 +91,7 @@ class TestIface(unittest.TestCase):
         dgst=digest.new("sha1")
         dgst.update(self.msg)
         self.assertEqual(dgst.digest_size,20)
-        self.assertEqual(dgst.digest(),b16decode(self.dgst,True)) 
+        self.assertEqual(dgst.digest(),b16decode(self.dgst,True))
     def test_duplicatedigest(self):
         dgst=digest.new("sha1")
         dgst.update(self.msg)

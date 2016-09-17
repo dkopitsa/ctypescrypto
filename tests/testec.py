@@ -1,5 +1,5 @@
-from ctypescrypto.oid import Oid
-from ctypescrypto.ec import create
+from ..ctypescrypto.oid import Oid
+from ..ctypescrypto.ec import create
 from base64 import b16decode
 from subprocess import Popen, PIPE
 import unittest
@@ -32,7 +32,7 @@ cUqktWYGr/GB65Zr5Ky1z/nha2bYCb6U4hTwbJP9CRCZr5hJklXn
 """
     def test_keyone(self):
         key=create(Oid("secp256k1"),b16decode("2A71BA9DEA99BC1F7C104BAEC671EC7EFF8BFF969BB8D346DB4C3352A4699DC3",True))
-            
+
         out=key.exportpriv()
         self.assertEqual(dump_key(out),dump_key(self.ec1priv))
         self.assertEqual(str(key),dump_pub_key(self.ec1priv))

@@ -5,18 +5,15 @@ PKey object of this module is wrapper around OpenSSL EVP_PKEY object.
 """
 
 
-from ctypes import c_char_p, c_void_p, c_int, c_long, POINTER
-from ctypes import create_string_buffer, byref, memmove, CFUNCTYPE
-from ctypescrypto import libcrypto
-from ctypescrypto.exception import LibCryptoError, clear_err_stack
-from ctypescrypto.bio import Membio
+from . import libcrypto, ffi
+from .exception import LibCryptoError, clear_err_stack
+from .bio import Membio
 
 __all__ = ['PKeyError', 'password_callback', 'PKey', 'PW_CALLBACK_FUNC']
 class PKeyError(LibCryptoError):
     """ Exception thrown if libcrypto finctions return an error """
     pass
 
-PW_CALLBACK_FUNC = CFUNCTYPE(c_int, c_char_p, c_int, c_int, c_char_p)
 """ Function type for pem password callback """
 
 def password_callback(buf, length, rwflag, userdata):
@@ -31,7 +28,7 @@ def password_callback(buf, length, rwflag, userdata):
     memmove(buf, userdata, cnt)
     return cnt
 
-_cb = PW_CALLBACK_FUNC(password_callback)
+# _cb = PW_CALLBACK_FUNC(password_callback)
 
 class PKey(object):
     """
@@ -48,7 +45,11 @@ class PKey(object):
          libcrypto routines
     """
     def __init__(self, ptr=None, privkey=None, pubkey=None, format="PEM",
-                 cansign=False, password=None, callback=_cb):
+                 cansign=False, password=None, callback=None):
+        if password is None:
+            password = ffi.NULL
+        if callback is None:
+            callback = ffi.NULL
         if not ptr is None:
             self.key = ptr
             self.cansign = cansign
@@ -62,22 +63,22 @@ class PKey(object):
             bio = Membio(privkey)
             self.cansign = True
             if format == "PEM":
-                self.key = libcrypto.PEM_read_bio_PrivateKey(bio.bio, None,
+                self.key = libcrypto.PEM_read_bio_PrivateKey(bio.bio.bio, ffi.NULL,
                                                              callback,
-                                                             c_char_p(password))
+                                                             password)
             else:
-                self.key = libcrypto.d2i_PrivateKey_bio(bio.bio, None)
+                self.key = libcrypto.d2i_PrivateKey_bio(bio.bio.bio, ffi.NULL)
             if self.key is None:
                 raise PKeyError("error parsing private key")
         elif not pubkey is None:
             bio = Membio(pubkey)
             self.cansign = False
             if format == "PEM":
-                self.key = libcrypto.PEM_read_bio_PUBKEY(bio.bio, None,
+                self.key = libcrypto.PEM_read_bio_PUBKEY(bio.bio.bio, ffi.NULL,
                                                          callback,
-                                                         c_char_p(password))
+                                                         password)
             else:
-                self.key = libcrypto.d2i_PUBKEY_bio(bio.bio, None)
+                self.key = libcrypto.d2i_PUBKEY_bio(bio.bio.bio, ffi.NULL)
             if self.key is None:
                 raise PKeyError("error parsing public key")
         else:
@@ -110,23 +111,23 @@ class PKey(object):
         Keyword arguments allows to set various algorithm-specific
         parameters. See pkeyutl(1) manual.
         """
-        ctx = libcrypto.EVP_PKEY_CTX_new(self.key, None)
+        ctx = libcrypto.EVP_PKEY_CTX_new(self.key, ffi.NULL)
         if ctx is None:
             raise PKeyError("Initailizing sign context")
         if libcrypto.EVP_PKEY_sign_init(ctx) < 1:
             raise PKeyError("sign_init")
         self._configure_context(ctx, kwargs)
         # Find out signature size
-        siglen = c_long(0)
-        if libcrypto.EVP_PKEY_sign(ctx, None, byref(siglen), digest,
+        siglen = ffi.new("size_t *")
+        if libcrypto.EVP_PKEY_sign(ctx, ffi.NULL, siglen, digest,
                                    len(digest)) < 1:
             raise PKeyError("computing signature length")
-        sig = create_string_buffer(siglen.value)
-        if libcrypto.EVP_PKEY_sign(ctx, sig, byref(siglen), digest,
+        sig = ffi.new('char[]', siglen[0])
+        if libcrypto.EVP_PKEY_sign(ctx, sig, siglen, digest,
                                    len(digest)) < 1:
             raise PKeyError("signing")
         libcrypto.EVP_PKEY_CTX_free(ctx)
-        return sig.raw[:int(siglen.value)]
+        return ffi.string(sig, siglen[0])
 
     def verify(self, digest, signature, **kwargs):
         """
@@ -135,8 +136,8 @@ class PKey(object):
         Keyword arguments allows to set algorithm-specific
         parameters
         """
-        ctx = libcrypto.EVP_PKEY_CTX_new(self.key, None)
-        if ctx is None:
+        ctx = libcrypto.EVP_PKEY_CTX_new(self.key, ffi.NULL)
+        if ctx == ffi.NULL:
             raise PKeyError("Initailizing verify context")
         if libcrypto.EVP_PKEY_verify_init(ctx) < 1:
             raise PKeyError("verify_init")
@@ -179,7 +180,7 @@ class PKey(object):
         keylen = c_long(0)
         if libcrypto.EVP_PKEY_derive(ctx, None, byref(keylen)) <= 0:
             raise PKeyError("computing shared key length")
-        buf = create_string_buffer(keylen.value)
+        buf = ffi.new('char[]', keylen.value)
         if libcrypto.EVP_PKEY_derive(ctx, buf, byref(keylen)) <= 0:
             raise PKeyError("computing actual shared key")
         libcrypto.EVP_PKEY_CTX_free(ctx)
@@ -210,8 +211,8 @@ class PKey(object):
 
         paramsfrom does work too
         """
-        tmpeng = c_void_p(None)
-        ameth = libcrypto.EVP_PKEY_asn1_find_str(byref(tmpeng), algorithm, -1)
+        tmpeng = ffi.new('void **')
+        ameth = libcrypto.EVP_PKEY_asn1_find_str(tmpeng, algorithm, -1)
         if ameth is None:
             raise PKeyError("Algorithm %s not foind\n"%(algorithm))
         clear_err_stack()
@@ -249,8 +250,8 @@ class PKey(object):
             raise PKeyError("error serializing public key")
         return str(bio)
 
-    def exportpriv(self, format="PEM", password=None, cipher=None,
-                   callback=_cb):
+    def exportpriv(self, format="PEM", password=ffi.NULL, cipher=ffi.NULL,
+                   callback=ffi.NULL):
         """
         Returns private key as PEM or DER Structure.
         If password and cipher are specified, encrypts key
@@ -259,19 +260,19 @@ class PKey(object):
         """
         bio = Membio()
         if cipher is None:
-            evp_cipher = None
+            evp_cipher = ffi.NULL
         else:
-            evp_cipher = cipher.cipher
+            evp_cipher = cipher
         if format == "PEM":
             ret = libcrypto.PEM_write_bio_PrivateKey(bio.bio, self.key,
-                                                     evp_cipher, None, 0,
+                                                     evp_cipher, ffi.NULL, 0,
                                                      callback,
-                                                     c_char_p(password))
+                                                     password)
         else:
             ret = libcrypto.i2d_PKCS8PrivateKey_bio(bio.bio, self.key,
-                                                    evp_cipher, None, 0,
+                                                    evp_cipher, ffi.NULL, 0,
                                                     callback,
-                                                    c_char_p(password))
+                                                    password)
         if ret == 0:
             raise PKeyError("error serializing private key")
         return str(bio)
@@ -296,63 +297,63 @@ class PKey(object):
             if ret < 1:
                 raise PKeyError("Error setting parameter %s" % oper)
 # Declare function prototypes
-libcrypto.EVP_PKEY_cmp.argtypes = (c_void_p, c_void_p)
-libcrypto.PEM_read_bio_PrivateKey.restype = c_void_p
-libcrypto.PEM_read_bio_PrivateKey.argtypes = (c_void_p, POINTER(c_void_p),
-                                              PW_CALLBACK_FUNC, c_char_p)
-libcrypto.PEM_read_bio_PUBKEY.restype = c_void_p
-libcrypto.PEM_read_bio_PUBKEY.argtypes = (c_void_p, POINTER(c_void_p),
-                                          PW_CALLBACK_FUNC, c_char_p)
-libcrypto.d2i_PUBKEY_bio.restype = c_void_p
-libcrypto.d2i_PUBKEY_bio.argtypes = (c_void_p, c_void_p)
-libcrypto.d2i_PrivateKey_bio.restype = c_void_p
-libcrypto.d2i_PrivateKey_bio.argtypes = (c_void_p, c_void_p)
-libcrypto.EVP_PKEY_print_public.argtypes = (c_void_p, c_void_p, c_int, c_void_p)
-libcrypto.EVP_PKEY_asn1_find_str.restype = c_void_p
-libcrypto.EVP_PKEY_asn1_find_str.argtypes = (c_void_p, c_char_p, c_int)
-libcrypto.EVP_PKEY_asn1_get0_info.restype = c_int
-libcrypto.EVP_PKEY_asn1_get0_info.argtypes = (POINTER(c_int), POINTER(c_int),
-                                              POINTER(c_int), POINTER(c_char_p),
-                                              POINTER(c_char_p), c_void_p)
-libcrypto.EVP_PKEY_cmp.restype = c_int
-libcrypto.EVP_PKEY_cmp.argtypes = (c_void_p, c_void_p)
-libcrypto.EVP_PKEY_CTX_ctrl_str.restype = c_int
-libcrypto.EVP_PKEY_CTX_ctrl_str.argtypes = (c_void_p, c_void_p, c_void_p)
-libcrypto.EVP_PKEY_CTX_ctrl.restype = c_int
-libcrypto.EVP_PKEY_CTX_ctrl.argtypes = (c_void_p, c_int, c_int, c_int, c_int,
-                                        c_void_p)
-libcrypto.EVP_PKEY_CTX_free.argtypes = (c_void_p, )
-libcrypto.EVP_PKEY_CTX_new.restype = c_void_p
-libcrypto.EVP_PKEY_CTX_new.argtypes = (c_void_p, c_void_p)
-libcrypto.EVP_PKEY_CTX_new_id.restype = c_void_p
-libcrypto.EVP_PKEY_CTX_new_id.argtypes = (c_int, c_void_p)
-libcrypto.EVP_PKEY_derive.restype = c_int
-libcrypto.EVP_PKEY_derive.argtypes = (c_void_p, c_char_p, POINTER(c_long))
-libcrypto.EVP_PKEY_derive_init.restype = c_int
-libcrypto.EVP_PKEY_derive_init.argtypes = (c_void_p, )
-libcrypto.EVP_PKEY_derive_set_peer.restype = c_int
-libcrypto.EVP_PKEY_derive_set_peer.argtypes = (c_void_p, c_void_p)
-libcrypto.EVP_PKEY_free.argtypes = (c_void_p,)
-libcrypto.EVP_PKEY_keygen.restype = c_int
-libcrypto.EVP_PKEY_keygen.argtypes = (c_void_p, c_void_p)
-libcrypto.EVP_PKEY_keygen_init.restype = c_int
-libcrypto.EVP_PKEY_keygen_init.argtypes = (c_void_p, )
-libcrypto.EVP_PKEY_sign.restype = c_int
-libcrypto.EVP_PKEY_sign.argtypes = (c_void_p, c_char_p, POINTER(c_long),
-                                    c_char_p, c_long)
-libcrypto.EVP_PKEY_sign_init.restype = c_int
-libcrypto.EVP_PKEY_sign_init.argtypes = (c_void_p, )
-libcrypto.EVP_PKEY_verify.restype = c_int
-libcrypto.EVP_PKEY_verify.argtypes = (c_void_p, c_char_p, c_long, c_char_p,
-                                      c_long)
-libcrypto.EVP_PKEY_verify_init.restype = c_int
-libcrypto.EVP_PKEY_verify_init.argtypes = (c_void_p, )
-libcrypto.PEM_write_bio_PrivateKey.argtypes = (c_void_p, c_void_p, c_void_p,
-                                               c_char_p, c_int,
-                                               PW_CALLBACK_FUNC, c_char_p)
-libcrypto.PEM_write_bio_PUBKEY.argtypes = (c_void_p, c_void_p)
-libcrypto.i2d_PUBKEY_bio.argtypes = (c_void_p, c_void_p)
-libcrypto.i2d_PKCS8PrivateKey_bio.argtypes = (c_void_p, c_void_p, c_void_p,
-                                              c_char_p, c_int,
-                                              PW_CALLBACK_FUNC, c_char_p)
-libcrypto.ENGINE_finish.argtypes = (c_void_p, )
+# libcrypto.EVP_PKEY_cmp.argtypes = (c_void_p, c_void_p)
+# libcrypto.PEM_read_bio_PrivateKey.restype = c_void_p
+# libcrypto.PEM_read_bio_PrivateKey.argtypes = (c_void_p, POINTER(c_void_p),
+#                                               PW_CALLBACK_FUNC, c_char_p)
+# libcrypto.PEM_read_bio_PUBKEY.restype = c_void_p
+# libcrypto.PEM_read_bio_PUBKEY.argtypes = (c_void_p, POINTER(c_void_p),
+#                                           PW_CALLBACK_FUNC, c_char_p)
+# libcrypto.d2i_PUBKEY_bio.restype = c_void_p
+# libcrypto.d2i_PUBKEY_bio.argtypes = (c_void_p, c_void_p)
+# libcrypto.d2i_PrivateKey_bio.restype = c_void_p
+# libcrypto.d2i_PrivateKey_bio.argtypes = (c_void_p, c_void_p)
+# libcrypto.EVP_PKEY_print_public.argtypes = (c_void_p, c_void_p, c_int, c_void_p)
+# libcrypto.EVP_PKEY_asn1_find_str.restype = c_void_p
+# libcrypto.EVP_PKEY_asn1_find_str.argtypes = (c_void_p, c_char_p, c_int)
+# libcrypto.EVP_PKEY_asn1_get0_info.restype = c_int
+# libcrypto.EVP_PKEY_asn1_get0_info.argtypes = (POINTER(c_int), POINTER(c_int),
+#                                               POINTER(c_int), POINTER(c_char_p),
+#                                               POINTER(c_char_p), c_void_p)
+# libcrypto.EVP_PKEY_cmp.restype = c_int
+# libcrypto.EVP_PKEY_cmp.argtypes = (c_void_p, c_void_p)
+# libcrypto.EVP_PKEY_CTX_ctrl_str.restype = c_int
+# libcrypto.EVP_PKEY_CTX_ctrl_str.argtypes = (c_void_p, c_void_p, c_void_p)
+# libcrypto.EVP_PKEY_CTX_ctrl.restype = c_int
+# libcrypto.EVP_PKEY_CTX_ctrl.argtypes = (c_void_p, c_int, c_int, c_int, c_int,
+#                                         c_void_p)
+# libcrypto.EVP_PKEY_CTX_free.argtypes = (c_void_p, )
+# libcrypto.EVP_PKEY_CTX_new.restype = c_void_p
+# libcrypto.EVP_PKEY_CTX_new.argtypes = (c_void_p, c_void_p)
+# libcrypto.EVP_PKEY_CTX_new_id.restype = c_void_p
+# libcrypto.EVP_PKEY_CTX_new_id.argtypes = (c_int, c_void_p)
+# libcrypto.EVP_PKEY_derive.restype = c_int
+# libcrypto.EVP_PKEY_derive.argtypes = (c_void_p, c_char_p, POINTER(c_long))
+# libcrypto.EVP_PKEY_derive_init.restype = c_int
+# libcrypto.EVP_PKEY_derive_init.argtypes = (c_void_p, )
+# libcrypto.EVP_PKEY_derive_set_peer.restype = c_int
+# libcrypto.EVP_PKEY_derive_set_peer.argtypes = (c_void_p, c_void_p)
+# libcrypto.EVP_PKEY_free.argtypes = (c_void_p,)
+# libcrypto.EVP_PKEY_keygen.restype = c_int
+# libcrypto.EVP_PKEY_keygen.argtypes = (c_void_p, c_void_p)
+# libcrypto.EVP_PKEY_keygen_init.restype = c_int
+# libcrypto.EVP_PKEY_keygen_init.argtypes = (c_void_p, )
+# libcrypto.EVP_PKEY_sign.restype = c_int
+# libcrypto.EVP_PKEY_sign.argtypes = (c_void_p, c_char_p, POINTER(c_long),
+#                                     c_char_p, c_long)
+# libcrypto.EVP_PKEY_sign_init.restype = c_int
+# libcrypto.EVP_PKEY_sign_init.argtypes = (c_void_p, )
+# libcrypto.EVP_PKEY_verify.restype = c_int
+# libcrypto.EVP_PKEY_verify.argtypes = (c_void_p, c_char_p, c_long, c_char_p,
+#                                       c_long)
+# libcrypto.EVP_PKEY_verify_init.restype = c_int
+# libcrypto.EVP_PKEY_verify_init.argtypes = (c_void_p, )
+# libcrypto.PEM_write_bio_PrivateKey.argtypes = (c_void_p, c_void_p, c_void_p,
+#                                                c_char_p, c_int,
+#                                                PW_CALLBACK_FUNC, c_char_p)
+# libcrypto.PEM_write_bio_PUBKEY.argtypes = (c_void_p, c_void_p)
+# libcrypto.i2d_PUBKEY_bio.argtypes = (c_void_p, c_void_p)
+# libcrypto.i2d_PKCS8PrivateKey_bio.argtypes = (c_void_p, c_void_p, c_void_p,
+#                                               c_char_p, c_int,
+#                                               PW_CALLBACK_FUNC, c_char_p)
+# libcrypto.ENGINE_finish.argtypes = (c_void_p, )

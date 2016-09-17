@@ -1,4 +1,4 @@
-from ctypescrypto.bio import Membio
+from ..ctypescrypto.bio import Membio
 import unittest
 
 class TestRead(unittest.TestCase):

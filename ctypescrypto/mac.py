@@ -6,10 +6,9 @@ It has not only HMAC support, but can support other types of MAC.
 
 """
 
-from ctypescrypto.digest import Digest,DigestType,DigestError
-from ctypescrypto.oid import Oid
-from ctypescrypto import libcrypto
-from ctypes import c_int,c_char_p, c_void_p, c_size_t,POINTER,create_string_buffer,pointer
+from .digest import Digest,DigestType,DigestError
+from .oid import Oid
+from . import libcrypto, ffi
 
 __all__ = ['MAC','DigestError']
 class MAC(Digest):
@@ -21,8 +20,8 @@ class MAC(Digest):
     def __init__(self,algorithm,key,digest=None,**kwargs):
         """
         Constructor has to obligatory arguments:
-            
-            @param algorithm - which is name of MAC algorithm i.e 'hmac' or 
+
+            @param algorithm - which is name of MAC algorithm i.e 'hmac' or
                     'gost-mac' or equivalent Oid object
             @param key - byte buffer with key.
 
@@ -52,7 +51,7 @@ class MAC(Digest):
         else:
             self.digest_type=None
             d=None
-        self.key=libcrypto.EVP_PKEY_new_mac_key(self.algorithm.nid,None,key,len(key))
+        self.key=libcrypto.EVP_PKEY_new_mac_key(self.algorithm.nid,ffi.NULL,key,len(key))
         if self.key is None:
             raise DigestError("EVP_PKEY_new_mac_key")
         pctx=c_void_p()
@@ -76,20 +75,20 @@ class MAC(Digest):
         """
         if data is not None:
             self.update(data)
-        b=create_string_buffer(256)
+        b=ffi.new('char[]', 256)
         size=c_size_t(256)
         if libcrypto.EVP_DigestSignFinal(self.ctx,b,pointer(size))<=0:
             raise DigestError('SignFinal')
         self.digest_finalized=True
         return b.raw[:size.value]
-
-libcrypto.EVP_DigestSignFinal.argtypes=(c_void_p,c_char_p,POINTER(c_size_t))
-libcrypto.EVP_DigestSignFinal.restype=c_int
-libcrypto.EVP_DigestSignInit.argtypes=(c_void_p,POINTER(c_void_p),c_void_p,c_void_p,c_void_p)
-libcrypto.EVP_DigestSignInit.restype=c_int
-libcrypto.EVP_PKEY_CTX_ctrl_str.argtypes=(c_void_p,c_char_p,c_char_p)
-libcrypto.EVP_PKEY_CTX_ctrl_str.restype=c_int
-libcrypto.EVP_PKEY_new_mac_key.argtypes=(c_int,c_void_p,c_char_p,c_int)
-libcrypto.EVP_PKEY_new_mac_key.restype=c_void_p
-libcrypto.EVP_MD_CTX_md.argtypes=(c_void_p,)
-libcrypto.EVP_MD_CTX_md.restype=c_void_p
+#
+# libcrypto.EVP_DigestSignFinal.argtypes=(c_void_p,c_char_p,POINTER(c_size_t))
+# libcrypto.EVP_DigestSignFinal.restype=c_int
+# libcrypto.EVP_DigestSignInit.argtypes=(c_void_p,POINTER(c_void_p),c_void_p,c_void_p,c_void_p)
+# libcrypto.EVP_DigestSignInit.restype=c_int
+# libcrypto.EVP_PKEY_CTX_ctrl_str.argtypes=(c_void_p,c_char_p,c_char_p)
+# libcrypto.EVP_PKEY_CTX_ctrl_str.restype=c_int
+# libcrypto.EVP_PKEY_new_mac_key.argtypes=(c_int,c_void_p,c_char_p,c_int)
+# libcrypto.EVP_PKEY_new_mac_key.restype=c_void_p
+# libcrypto.EVP_MD_CTX_md.argtypes=(c_void_p,)
+# libcrypto.EVP_MD_CTX_md.restype=c_void_p
